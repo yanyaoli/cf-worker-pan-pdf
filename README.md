@@ -7,6 +7,10 @@
 
 本项目是一个运行在 Cloudflare Workers 上的轻量级应用，使用某度网盘的 "PDF 预览" 机制，实现对 150MB 以下文件的免客户端高速预览。
 
+## 📸 界面预览
+
+![App Screenshot](https://github.com/user-attachments/assets/8b0f691a-1ad9-4cc4-911a-e2b2f017d42f)
+
 ## ✨ 特性
 
 - **⚡️ Serverless 架构**：无需服务器，直接部署在 Cloudflare Workers 上。
@@ -15,6 +19,20 @@
 - **⏰ 自动清理**：配合 Cron Triggers 定时清理网盘内的临时转存文件。
 - **📱 响应式 UI**：优雅的移动端与桌面端适配，支持批量解析、Aria2 推送。
 - **🕵️‍♂️ 隐私保护**：透传客户端 User-Agent，伪装成浏览器正常预览行为。
+
+## 📥 下载与安装
+
+您可以选择以下两种方式之一进行部署：
+
+### 方式 A：源码部署 (推荐，适合开发者)
+请参考下方的 [🛠️ 部署指南](#🛠️-部署指南) 完成完整部署。
+
+### 方式 B：单文件部署
+1. 前往 [**Releases 页面**](https://github.com/lain39/cf-worker-pan-pdf/releases) 下载最新的 `worker.js`。
+2. 在 Cloudflare 后台新建 Worker，粘贴代码。
+3. 手动配置环境变量（Cookie, Client ID 等）。
+
+---
 
 ## 🛠️ 部署指南
 
