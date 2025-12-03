@@ -308,9 +308,9 @@ export class BaiduDiskClient {
           'https://pcs.baidu.com/rest/2.0/pcs/file?method=plantcookie&type=ett',
           'https://pcs.baidu.com/rest/2.0/pcs/file?method=plantcookie&type=stoken&source=pcs',
         ]
-        for(let api in pcsUrls){
+        for(let api of pcsUrls){
           let resp = await fetch(api, {headers: this.commonHeaders});
-          updateCookies(resp.headers.getSetCookie());
+          this.updateCookies(resp.headers.getSetCookie());
           await resp.body.cancel();
         }
         
