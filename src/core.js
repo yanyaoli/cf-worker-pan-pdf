@@ -69,7 +69,7 @@ export async function handleDownload(body, clientIP, env, ctx, userAgent) {
     try {
       await client.transferFiles(fs_ids, share_data.shareid, share_data.uk, share_data.sekey, transferDir);
     } catch (e) {
-      // 失败重试逻辑：先清理可能存在的残留目录，再重试
+      // 失败重试逻辑：腾出空间
       await client.deleteFiles(["/netdisk"]);
       await client.createDir(transferDir);
       await client.transferFiles(fs_ids, share_data.shareid, share_data.uk, share_data.sekey, transferDir);
