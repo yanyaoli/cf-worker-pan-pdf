@@ -265,7 +265,7 @@ export const HTML_CONTENT = `<!DOCTYPE html>
                     <div class="p-6 space-y-4">
                         <div>
                             <label class="block text-sm font-medium text-slate-700 mb-1">Baidu Cookie</label>
-                            <textarea v-model="cookieConfig.bduss" rows="5" placeholder="BDUSS=...; STOKEN=..." 
+                            <textarea v-model="cookieConfig.bduss" rows="5" placeholder="BDUSS=..." 
                                 class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-500 text-xs font-mono"></textarea>
                             <p class="text-xs text-slate-400 mt-1">若留空，将自动轮询服务端预置的账号池。</p>
                         </div>

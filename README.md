@@ -76,7 +76,7 @@ npx wrangler login
 
 ```bash
 # 1. 设置 Cookie 池 (JSON 数组字符串格式)
-# 格式示例: ["BDUSS=xxx; STOKEN=xxx", "BDUSS=yyy; STOKEN=yyy"]
+# 格式示例: ["BDUSS=xxx", "BDUSS=yyy"]
 npx wrangler secret put SERVER_COOKIES
 
 # (如果开启鉴权):

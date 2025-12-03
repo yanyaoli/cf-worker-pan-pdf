@@ -303,6 +303,17 @@ export class BaiduDiskClient {
       const data = await this.fetchJson(api, undefined, true);
       if (data.errno === 0 && data.result) {
         this.bdstoken = data.result.bdstoken;
+        // 更新STOKEN
+        const pcsUrls = [
+          'https://pcs.baidu.com/rest/2.0/pcs/file?method=plantcookie&type=ett',
+          'https://pcs.baidu.com/rest/2.0/pcs/file?method=plantcookie&type=stoken&source=pcs',
+        ]
+        for(let api in pcsUrls){
+          let resp = await fetch(api, {headers: this.commonHeaders});
+          updateCookies(resp.headers.getSetCookie());
+          await resp.body.cancel();
+        }
+        
         return true;
       }
       return false;
