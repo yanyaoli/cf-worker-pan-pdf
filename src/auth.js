@@ -48,7 +48,13 @@ export async function handleAuth(request, env, url) {
 
       const rawSession = JSON.stringify(sessionObj);
       const signature = await sign(rawSession, secret);
-      const sessionValue = btoa(rawSession) + "." + signature; // 格式: payload.signature
+
+      const safeBase64 = btoa(encodeURIComponent(rawSession).replace(/%([0-9A-F]{2})/g,
+        function toSolidBytes(match, p1) {
+          return String.fromCharCode('0x' + p1);
+        }));
+
+      const sessionValue = safeBase64 + "." + signature; // 格式: payload.signature
 
       return new Response(null, {
         status: 302,
@@ -79,7 +85,9 @@ export async function verifySession(request, env) {
     if (parts.length !== 2) return null;
 
     const [payloadB64, signature] = parts;
-    const rawSession = atob(payloadB64);
+    const rawSession = decodeURIComponent(atob(payloadB64).split('').map(function (c) {
+      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
 
     // 验证签名
     const secret = env.SESSION_SECRET;
