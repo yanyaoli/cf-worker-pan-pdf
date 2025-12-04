@@ -49,7 +49,7 @@ export const HTML_CONTENT = `<!DOCTYPE html>
             
             <div class="flex items-center gap-3">
                 <transition name="fade">
-                    <button v-if="resultLinks.length > 0" @click="showResultModal = true" class="w-10 h-10 rounded-full bg-white border border-slate-200 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 transition-colors flex items-center justify-center shadow-sm" title="查看结果">
+                    <button v-if="resultLinks.length > 0 || failedList.length > 0" @click="showResultModal = true" class="w-10 h-10 rounded-full bg-white border border-slate-200 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 transition-colors flex items-center justify-center shadow-sm" title="查看结果">
                         <i class="fa-solid fa-list-check"></i>
                     </button>
                 </transition>
@@ -202,9 +202,23 @@ export const HTML_CONTENT = `<!DOCTYPE html>
                     </div>
                     
                     <div class="p-0 overflow-y-auto bg-slate-50/50 flex-1">
-                        <!-- Errors -->
+                        <!-- Failed Retry Section -->
+                        <div v-if="failedList.length > 0 || isRetrying" class="p-4 bg-orange-50 border-b border-orange-100 flex items-center justify-between sticky top-0 z-20">
+                            <div class="flex items-center gap-2 text-orange-700">
+                                <i class="fa-solid fa-circle-exclamation"></i>
+                                <span class="text-sm font-bold">{{ failedList.length }} 个文件解析失败</span>
+                            </div>
+                            <button @click="retryFailed" :disabled="processing" 
+                                class="px-4 py-1.5 bg-orange-500 hover:bg-orange-600 text-white text-xs rounded-lg font-medium transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2">
+                                <i v-if="processing" class="fa-solid fa-spinner fa-spin"></i>
+                                <i v-else class="fa-solid fa-rotate-right"></i>
+                                {{ processing ? '正在重试...' : '重试失败项' }}
+                            </button>
+                        </div>
+
+                        <!-- Errors Log (Optional) -->
                         <div v-if="resultErrors.length > 0" class="p-4 bg-red-50 border-b border-red-100">
-                            <h4 class="text-red-700 font-bold text-sm mb-2">部分文件处理失败:</h4>
+                            <h4 class="text-red-700 font-bold text-sm mb-2">错误日志:</h4>
                             <ul class="list-disc list-inside text-xs text-red-600 space-y-1">
                                 <li v-for="(err, idx) in resultErrors" :key="idx">{{ err }}</li>
                             </ul>
@@ -216,7 +230,6 @@ export const HTML_CONTENT = `<!DOCTYPE html>
                                 <div class="flex justify-between items-start gap-4 mb-2">
                                     <div class="font-medium text-slate-700 break-all text-sm flex items-center gap-2">
                                         <span class="bg-emerald-100 text-emerald-600 text-[10px] px-1 rounded">PDF加速</span>
-                                        <!-- 显示相对路径 -->
                                         <span :title="item.relativePath">{{ item.relativePath }}</span>
                                     </div>
                                     <span class="text-xs text-slate-400 whitespace-nowrap">{{ formatSize(item.size) }}</span>
@@ -239,7 +252,7 @@ export const HTML_CONTENT = `<!DOCTYPE html>
                                 </div>
                             </div>
                         </div>
-                        <div v-else-if="resultErrors.length === 0" class="p-10 text-center text-slate-400">
+                        <div v-else-if="resultErrors.length === 0 && failedList.length === 0" class="p-10 text-center text-slate-400">
                             无有效文件链接
                         </div>
                     </div>
@@ -311,6 +324,8 @@ export const HTML_CONTENT = `<!DOCTYPE html>
                 const dirCache = ref({});
                 const resultLinks = ref([]);
                 const resultErrors = ref([]);
+                const failedList = ref([]); // 存储失败的文件对象
+                const isRetrying = ref(false); // 重试状态
 
                 const cookieConfig = ref({
                     bduss: '',
@@ -337,9 +352,8 @@ export const HTML_CONTENT = `<!DOCTYPE html>
                         body: JSON.stringify(payload)
                     });
                     
-                    // Auth Check
                     if (res.status === 401) {
-                       window.location.reload(); // Trigger re-auth redirect
+                       window.location.reload(); 
                        throw new Error("请先登录");
                     }
                     
@@ -382,35 +396,146 @@ export const HTML_CONTENT = `<!DOCTYPE html>
                         return null;
                     }
                 };
+
+                // --- 递归扫描文件逻辑 (Client Side Recursion) ---
+                const scanFilesRecursive = async (items) => {
+                    let files = [];
+                    // 并发扫描当前层级的文件夹 (限制并发 3，避免把浏览器或API卡死)
+                    const chunks = [];
+                    const concurrency = 3;
+                    
+                    for (let item of items) {
+                        if (item.isdir == 1) {
+                            // 是文件夹，需要深入
+                            chunks.push(async () => {
+                                loadingText.value = \`正在扫描目录: \${item.server_filename}...\`; // UI 提示
+                                const children = await loadDirectoryContent(item.path);
+                                if (children && children.length > 0) {
+                                    const subFiles = await scanFilesRecursive(children);
+                                    files.push(...subFiles);
+                                }
+                            });
+                        } else {
+                            // 是文件，直接加入
+                            files.push(item);
+                        }
+                    }
+
+                    // 执行并发队列
+                    let active = 0;
+                    let index = 0;
+                    
+                    const run = async () => {
+                        if (index >= chunks.length) return;
+                        const p = chunks[index++]();
+                        active++;
+                        await p;
+                        active--;
+                    };
+
+                    while (index < chunks.length || active > 0) {
+                        if (active < concurrency && index < chunks.length) {
+                            run(); 
+                        } else {
+                            await new Promise(r => setTimeout(r, 50));
+                        }
+                    }
+                    
+                    return files;
+                };
                 
-                const runDownloadTask = async (files) => {
-                     loadingDir.value = true; // Start Loading Overlay
-                     
-                     // 2. Parse Phase
-                     loadingText.value = '少女祈祷中 (过程可能较慢，请耐心等待)...';
+                const runDownloadTask = async (files, isRetry = false) => {
+                     loadingDir.value = true; 
                      processing.value = true;
-                     resultLinks.value = [];
-                     resultErrors.value = [];
+                     
+                     // 如果不是重试，清空所有结果；如果是重试，不清空成功列表，但重置失败列表
+                     if (!isRetry) {
+                         resultLinks.value = [];
+                         resultErrors.value = [];
+                         failedList.value = [];
+                     } else {
+                         // 重试时，假设所有待重试的都从 failedList 移除了，稍后失败的会重新加回来
+                         failedList.value = [];
+                         resultErrors.value = []; // 清空之前的错误日志，避免混淆
+                     }
                      
                      try {
-                        const fs_ids = files.map(f => f.fs_id);
-                        const res = await apiCall('/api/download', {
-                            fs_ids: fs_ids,
-                            share_data: shareData.value,
-                            cookie: cookieConfig.value.bduss
-                        });
+                        let targetFiles = [];
                         
-                        if (res.files) resultLinks.value.push(...res.files);
-                        if (res.errors) resultErrors.value.push(...res.errors);
+                        if (isRetry) {
+                            // 重试模式：直接使用传入的文件列表 (无需重新扫描目录)
+                            loadingText.value = '准备重试失败任务...';
+                            targetFiles = files;
+                        } else {
+                            // 正常模式：扫描目录
+                            loadingText.value = '正在递归扫描目录结构 (文件较多可能需要一点时间)...';
+                            const rawItems = JSON.parse(JSON.stringify(files));
+                            const allFiles = await scanFilesRecursive(rawItems);
+                            
+                            // 过滤大文件
+                            targetFiles = allFiles.filter(f => f.size <= 157286400);
+                            if (allFiles.length > targetFiles.length) {
+                                resultErrors.value.push(\`跳过了 \${allFiles.length - targetFiles.length} 个大于 150MB 的文件\`);
+                            }
+                        }
+
+                        if (targetFiles.length === 0) {
+                            if (!isRetry) alert("没有符合条件的文件");
+                            return;
+                        }
+
+                        // 3. 分批处理
+                        const BATCH_SIZE = 10; 
+                        const totalBatches = Math.ceil(targetFiles.length / BATCH_SIZE);
+                        
+                        for (let i = 0; i < targetFiles.length; i += BATCH_SIZE) {
+                            const batch = targetFiles.slice(i, i + BATCH_SIZE);
+                            const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+                            
+                            loadingText.value = \`正在解析第 \${batchNum} / \${totalBatches} 批 (共 \${targetFiles.length} 个文件)...\`;
+                            
+                            try {
+                                const fs_ids = batch.map(f => f.fs_id);
+                                const res = await apiCall('/api/download', {
+                                    fs_ids: fs_ids,
+                                    share_data: shareData.value,
+                                    cookie: cookieConfig.value.bduss
+                                });
+                                
+                                if (res.files) {
+                                    resultLinks.value.push(...res.files);
+                                    
+                                    // 【核心逻辑】计算本批次失败的文件
+                                    // 后端只返回成功的文件列表，且 filename 属性是原始文件名 (未加 .pdf)
+                                    const successNames = new Set(res.files.map(f => f.filename));
+                                    
+                                    // 找出 batch 中未出现在 successNames 里的文件 -> 视为失败
+                                    const batchFailures = batch.filter(f => !successNames.has(f.server_filename));
+                                    if (batchFailures.length > 0) {
+                                        failedList.value.push(...batchFailures);
+                                    }
+                                }
+                                
+                                if (res.errors && res.errors.length > 0) {
+                                    resultErrors.value.push(...res.errors);
+                                }
+                                
+                            } catch (e) {
+                                resultErrors.value.push(\`Batch \${batchNum} failed: \${e.message}\`);
+                                // 整个批次因网络/超时失败，全部加入失败列表
+                                failedList.value.push(...batch);
+                            }
+                        }
                         
                         showResultModal.value = true;
-                        currentList.value.forEach(f => { f.selected = false; });
+                        if (!isRetry) currentList.value.forEach(f => { f.selected = false; });
                      } catch(e) {
                         alert('Error: ' + e.message);
                      } finally {
                         processing.value = false;
-                        loadingDir.value = false; // End Loading Overlay
+                        loadingDir.value = false; 
                         loadingText.value = '';
+                        isRetrying.value = false; // 重置重试状态
                      }
                 };
 
@@ -418,6 +543,14 @@ export const HTML_CONTENT = `<!DOCTYPE html>
                     const selectedFiles = currentList.value.filter(f => f.selected);
                     if (!selectedFiles.length) return;
                     await runDownloadTask(selectedFiles);
+                };
+                
+                const retryFailed = async () => {
+                    if (failedList.value.length === 0) return;
+                    isRetrying.value = true;
+                    // 创建副本进行重试
+                    const filesToRetry = [...failedList.value];
+                    await runDownloadTask(filesToRetry, true);
                 };
                 
                 const downloadSingle = async (file) => {
@@ -438,10 +571,7 @@ export const HTML_CONTENT = `<!DOCTYPE html>
 
                 const sendToLocalAria2Logic = async (item) => {
                     const ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36 Edg/142.0.0.0";
-                    
-                    // Use relativePath. If missing (root files), use filename.
                     const outPath = item.relativePath || item.filename;
-                    
                     const payload = {
                         jsonrpc: '2.0',
                         method: 'aria2.addUri',
@@ -452,7 +582,6 @@ export const HTML_CONTENT = `<!DOCTYPE html>
                             { "out": outPath, "user-agent": ua }
                         ].filter(x => x !== undefined)
                     };
-                    
                     const res = await fetch(cookieConfig.value.aria2Url, {
                         method: 'POST', 
                         headers: {'Content-Type': 'application/json'},
@@ -476,8 +605,7 @@ export const HTML_CONTENT = `<!DOCTYPE html>
                 };
 
                 const mapFile = (f) => ({ ...f, selected: false });
-                const isFolder = (f) => f.isdir == 1;
-                // PDF mode limit is 150MB
+                const isFolder = (f) => f.isdir == 1; 
                 const isSupported = (f) => isFolder(f) || f.size <= 157286400;
 
                 const handleNameClick = async (file) => {
@@ -566,8 +694,8 @@ export const HTML_CONTENT = `<!DOCTYPE html>
                 return {
                     link, loading, loadingDir, loadingText, processing, errorMsg, hasData,
                     currentList, currentPath, selectedCount, isAllSelected,
-                    showResultModal, showSettingsModal, resultLinks, resultErrors, cookieConfig,
-                    analyzeLink, submitDownload, downloadSingle, handleNameClick, handleSelectionClick, toggleSelection,
+                    showResultModal, showSettingsModal, resultLinks, resultErrors, failedList, cookieConfig, isRetrying,
+                    analyzeLink, submitDownload, retryFailed, downloadSingle, handleNameClick, handleSelectionClick, toggleSelection,
                     goUp, resetToRoot, toggleAll, formatSize, getIcon, getIconClass, isFolder, isSupported,
                     copyLink, saveConfig, sendToLocalAria2, batchSendToAria2, openLink
                 };

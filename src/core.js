@@ -6,9 +6,9 @@ const DEFAULT_UA = "netdisk";
 const DEFAULT_PDF_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 // KV 键名常量
-const KV_BLOCK_KEY = "blocked_cookies";      // 黑名单 Key
-const KV_CLEAN_HISTORY_KEY = "clean_history"; // 清理历史 Key
-const KV_COOKIE_POOL_KEY = "server_cookies_pool"; // Cookie 池 Key
+const KV_BLOCK_KEY = "blocked_cookies";      
+const KV_CLEAN_HISTORY_KEY = "clean_history"; 
+const KV_COOKIE_POOL_KEY = "server_cookies_pool";
 
 // 配置常量
 const CLEAN_BATCH_SIZE = 5; 
@@ -44,29 +44,22 @@ export async function handleDownload(body, clientIP, env, ctx, userAgent) {
 
   // 2. 如果没有自定义 Cookie，则从服务器池中获取
   if (!validCookieFound) {
-    // 异步获取 Cookie 池 (支持 KV)
     const serverCookies = await getCookiePool(env);
     
     if (serverCookies.length === 0) throw new Error("无可用 Cookie，请联系管理员 (请检查 KV 或 Secret 配置)。");
 
-    // 获取 KV 中的黑名单
     const blockedList = await getKvValue(env, KV_BLOCK_KEY, []);
-    
-    // 过滤掉黑名单中的 Cookie
     let availableCookies = serverCookies.filter(c => !blockedList.includes(c));
 
-    // 兜底策略
     if (availableCookies.length === 0) {
         console.warn("All cookies are blocked. Retrying with full list...");
         availableCookies = serverCookies;
     }
 
-    // 随机打乱
     const shuffledCookies = shuffleArray(availableCookies);
 
     for (const sCookie of shuffledCookies) {
       const tempClient = new BaiduDiskClient(sCookie, clientIP);
-      
       if (await tempClient.init()) {
         client = tempClient;
         validCookieFound = true;
@@ -81,6 +74,7 @@ export async function handleDownload(body, clientIP, env, ctx, userAgent) {
   if (!validCookieFound || !client) throw new Error("所有 Cookie 均失效，无法执行操作。");
 
   // --- 业务执行 ---
+  // 每个批次都会创建一个独立的临时目录，处理完即焚
   const transferDir = `/netdisk/${crypto.randomUUID()}`;
   const errors = [];
   const validFiles = [];
@@ -92,9 +86,9 @@ export async function handleDownload(body, clientIP, env, ctx, userAgent) {
     try {
       await client.transferFiles(fs_ids, share_data.shareid, share_data.uk, share_data.sekey, transferDir);
     } catch (e) {
-      // 失败重试逻辑：先删再存
-      await client.deleteFiles(["/netdisk"]);
+      console.warn("First transfer attempt failed, retrying...", e.message);
       await client.createDir(transferDir);
+      await new Promise(r => setTimeout(r, 500));  // 等待创建生效
       await client.transferFiles(fs_ids, share_data.shareid, share_data.uk, share_data.sekey, transferDir);
     }
 
@@ -104,39 +98,45 @@ export async function handleDownload(body, clientIP, env, ctx, userAgent) {
     if (localFiles.length === 0) throw new Error("No files found after transfer");
 
     const filesToProcess = localFiles.map(f => f.path);
+    
     const pathInfoMap = {};
-
     localFiles.forEach(f => {
       let relative = f.path;
       if (f.path.startsWith(transferDir)) relative = f.path.substring(transferDir.length + 1);
       pathInfoMap[f.path] = { size: f.size, filename: f.server_filename, relativePath: relative };
     });
 
-    // 5. 改名处理 (PDF重命名)
+    // 5. 改名处理 (PDF重命名) - 批量模式
+    const renameList = [];
     const newPaths = [];
+
     for (const path of filesToProcess) {
       const info = pathInfoMap[path];
       if (info.size > 150 * 1024 * 1024) {
         errors.push(`Skipped ${info.filename}: Size > 150MB`);
         continue;
       }
-
+      const newName = info.filename + ".pdf";
+      renameList.push({ path: path, newname: newName });
+      
       const newPath = path + ".pdf";
-      try {
-        const renamed = await client.renameFile(path, info.filename + ".pdf");
-        if (renamed) {
-          newPaths.push(newPath);
-          pathInfoMap[newPath] = info;
-        } else {
-          errors.push(`Rename failed for ${info.filename}`);
+      newPaths.push(newPath);
+      pathInfoMap[newPath] = info;
+    }
+
+    if (renameList.length > 0) {
+        try {
+            const renameSuccess = await client.renameBatch(renameList);
+            if (!renameSuccess) {
+                throw new Error("Batch rename failed");
+            }
+        } catch (e) {
+            throw new Error(`Renaming failed: ${e.message}`);
         }
-      } catch (e) {
-        errors.push(`Rename error for ${info.filename}: ${e.message}`);
-      }
     }
 
     // 6. 等待同步
-    await new Promise(r => setTimeout(r, 3000));
+    await new Promise(r => setTimeout(r, 1500)); 
 
     // 7. 获取链接
     const targetUA = userAgent || DEFAULT_PDF_UA;
@@ -157,6 +157,7 @@ export async function handleDownload(body, clientIP, env, ctx, userAgent) {
       }
     }
 
+    // 清理临时目录
     if (isUserCookie) {
       ctx.waitUntil((async () => {
         await new Promise(resolve => setTimeout(resolve, 30 * 1000));
@@ -173,7 +174,6 @@ export async function handleDownload(body, clientIP, env, ctx, userAgent) {
 }
 
 export async function handleCleanDir(env) {
-  // 改为异步获取
   const serverCookies = await getCookiePool(env);
   if (serverCookies.length === 0) return "No cookies configured";
 
@@ -181,7 +181,6 @@ export async function handleCleanDir(env) {
   const kvEnabled = !!env.COOKIE_DB;
 
   if (kvEnabled) {
-      // LRU 策略
       const history = await getKvValue(env, KV_CLEAN_HISTORY_KEY, {});
       const getCookieId = (c) => c.substring(0, 50);
       const sortedCookies = [...serverCookies].sort((a, b) => {
@@ -193,8 +192,6 @@ export async function handleCleanDir(env) {
   } else {
       targetCookies = shuffleArray(serverCookies).slice(0, CLEAN_BATCH_SIZE);
   }
-
-  console.log(`Starting batched cleanup. Targets: ${targetCookies.length}, Total: ${serverCookies.length}`);
 
   const results = [];
   const successCookies = [];
@@ -240,13 +237,10 @@ export async function handleCleanDir(env) {
 }
 
 export async function checkHealth(env) {
-  // 改为异步获取
   const serverCookies = await getCookiePool(env);
   const results = [];
   const currentBlockedList = [];
   const kvEnabled = !!env.COOKIE_DB;
-
-  console.log(`Starting Health Check. KV Enabled: ${kvEnabled}. Pool Size: ${serverCookies.length}`);
 
   const checkPromises = serverCookies.map(async (cookie, index) => {
       if (index > 0) await new Promise(r => setTimeout(r, index * 200));
@@ -263,7 +257,6 @@ export async function checkHealth(env) {
   }
 
   if (kvEnabled) {
-      console.log(`Updating KV blocklist. Count: ${currentBlockedList.length}`);
       await env.COOKIE_DB.put(KV_BLOCK_KEY, JSON.stringify(currentBlockedList));
   }
   
@@ -272,28 +265,21 @@ export async function checkHealth(env) {
 
 // --- Helper Functions ---
 
-// 获取 Cookie 池 (KV 优先 -> Secret 降级)
 async function getCookiePool(env) {
-    // 1. 尝试从 KV 读取
     if (env.COOKIE_DB) {
         try {
             const kvList = await env.COOKIE_DB.get(KV_COOKIE_POOL_KEY, { type: "json" });
             if (Array.isArray(kvList) && kvList.length > 0) {
                 return kvList;
             }
-        } catch(e) {
-            console.warn("Failed to read cookie pool from KV:", e);
-        }
+        } catch(e) { }
     }
 
-    // 2. 降级：尝试从环境变量/Secret 读取
     if (env.SERVER_COOKIES) {
         try {
             const parsed = JSON.parse(env.SERVER_COOKIES);
             if (Array.isArray(parsed)) return parsed;
-        } catch (e) {
-            console.error("Failed to parse SERVER_COOKIES env", e);
-        }
+        } catch (e) { }
     }
 
     return [];
@@ -472,6 +458,15 @@ export class BaiduDiskClient {
     const api = `https://pan.baidu.com/api/filemanager?opera=rename&async=2&onnest=fail&channel=chunlei&web=1&app_id=250528&clienttype=0&bdstoken=${this.bdstoken}`;
     const formData = new FormData();
     formData.append("filelist", JSON.stringify([{ path, newname: newName }]));
+    const data = await this.fetchJson(api, { method: "POST", body: formData });
+    return data.errno === 0;
+  }
+
+  async renameBatch(renameList) {
+    if (!renameList || renameList.length === 0) return true;
+    const api = `https://pan.baidu.com/api/filemanager?opera=rename&async=2&onnest=fail&channel=chunlei&web=1&app_id=250528&clienttype=0&bdstoken=${this.bdstoken}`;
+    const formData = new FormData();
+    formData.append("filelist", JSON.stringify(renameList));
     const data = await this.fetchJson(api, { method: "POST", body: formData });
     return data.errno === 0;
   }
