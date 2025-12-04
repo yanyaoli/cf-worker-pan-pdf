@@ -408,7 +408,7 @@ export const HTML_CONTENT = `<!DOCTYPE html>
                         if (item.isdir == 1) {
                             // 是文件夹，需要深入
                             chunks.push(async () => {
-                                loadingText.value = \`正在扫描目录: \${item.server_filename}...\`; // UI 提示
+                                loadingText.value = '正在扫描目录: ' + item.server_filename + '...'; // UI 提示
                                 const children = await loadDirectoryContent(item.path);
                                 if (children && children.length > 0) {
                                     const subFiles = await scanFilesRecursive(children);
@@ -473,10 +473,15 @@ export const HTML_CONTENT = `<!DOCTYPE html>
                             const allFiles = await scanFilesRecursive(rawItems);
                             
                             // 过滤大文件
-                            targetFiles = allFiles.filter(f => f.size <= 157286400);
-                            if (allFiles.length > targetFiles.length) {
-                                resultErrors.value.push(\`跳过了 \${allFiles.length - targetFiles.length} 个大于 150MB 的文件\`);
+                            const target = allFiles.filter(f => f.size <= 157286400);
+                            const skippedFiles = allFiles.filter(f => f.size > 157286400);
+                            
+                            if (skippedFiles.length > 0) {
+                                const names = skippedFiles.map(f => f.server_filename).join(', ');
+                                resultErrors.value.push('跳过了 ' + skippedFiles.length + ' 个大于 150MB 的文件: ' + names);
                             }
+                            
+                            targetFiles = target;
                         }
 
                         if (targetFiles.length === 0) {
@@ -492,7 +497,7 @@ export const HTML_CONTENT = `<!DOCTYPE html>
                             const batch = targetFiles.slice(i, i + BATCH_SIZE);
                             const batchNum = Math.floor(i / BATCH_SIZE) + 1;
                             
-                            loadingText.value = \`正在解析第 \${batchNum} / \${totalBatches} 批 (共 \${targetFiles.length} 个文件)...\`;
+                            loadingText.value = '正在解析第 ' + batchNum + ' / ' + totalBatches + ' 批 (共 ' + targetFiles.length + ' 个文件)...';
                             
                             try {
                                 const fs_ids = batch.map(f => f.fs_id);
@@ -521,7 +526,7 @@ export const HTML_CONTENT = `<!DOCTYPE html>
                                 }
                                 
                             } catch (e) {
-                                resultErrors.value.push(\`Batch \${batchNum} failed: \${e.message}\`);
+                                resultErrors.value.push('Batch ' + batchNum + ' failed: ' + e.message);
                                 // 整个批次因网络/超时失败，全部加入失败列表
                                 failedList.value.push(...batch);
                             }
@@ -566,7 +571,7 @@ export const HTML_CONTENT = `<!DOCTYPE html>
                             count++;
                         } catch(e) { console.error(e); }
                     }
-                    alert(\`已发送 \${count} / \${resultLinks.value.length} 个任务\`);
+                    alert('已发送 ' + count + ' / ' + resultLinks.value.length + ' 个任务');
                 };
 
                 const sendToLocalAria2Logic = async (item) => {
@@ -577,7 +582,7 @@ export const HTML_CONTENT = `<!DOCTYPE html>
                         method: 'aria2.addUri',
                         id: Date.now().toString(),
                         params: [
-                            cookieConfig.value.aria2Token ? \`token:\${cookieConfig.value.aria2Token}\` : undefined,
+                            cookieConfig.value.aria2Token ? 'token:' + cookieConfig.value.aria2Token : undefined,
                             [item.dlink],
                             { "out": outPath, "user-agent": ua }
                         ].filter(x => x !== undefined)
@@ -596,7 +601,7 @@ export const HTML_CONTENT = `<!DOCTYPE html>
                         await sendToLocalAria2Logic(item);
                         alert("已推送到本地 Aria2");
                     } catch(e) {
-                        alert("推送失败: " + e.message + "\\n请检查本地 Aria2 配置或 Mixed Content 问题");
+                        alert("推送失败: " + e.message + "\n请检查本地 Aria2 配置或 Mixed Content 问题");
                     }
                 };
 
