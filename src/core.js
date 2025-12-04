@@ -320,10 +320,10 @@ export class BaiduDiskClient {
     }
   }
 
-  async fetchJson(url, options = {}, shouldupdateCookies = false) {
+  async fetchJson(url, options = {}, shouldUpdateCookies = false) {
     const headers = { ...this.commonHeaders, ...options.headers };
     const resp = await fetch(url, { ...options, headers });
-    if (shouldupdateCookies) this.updateCookies(resp.headers.getSetCookie());
+    if (shouldUpdateCookies) this.updateCookies(resp.headers.getSetCookie());
     const data = await resp.json();
     return data;
   }

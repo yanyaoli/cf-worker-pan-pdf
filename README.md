@@ -66,7 +66,7 @@ npx wrangler login
 本项目使用 `wrangler.jsonc` 进行配置。
 
 1.  修改 `wrangler.jsonc` 中的 `ENABLE_AUTH` 来配置是否开启linux do connect鉴权。
-2.  确认 `crons` 定时任务频率（默认每 30 分钟）。
+2.  确认 `crons` 定时任务频率（默认每 2小时）。
 
 ### 4. 设置敏感数据 (Secrets)
 
