@@ -25,8 +25,10 @@ export async function handleAuth(request, env, url) {
       });
 
       const tokenData = await tokenResp.json();
-      console.log(tokenData)
-      if (tokenData.error) return new Response(tokenData.error_description || "Token Error", { status: 400 });
+      if (tokenData.error) {
+          console.error("OAuth Token Error:", tokenData);
+          return new Response(tokenData.error_description || "Token Error", { status: 400 });
+      }
 
       // 2. 获取用户信息
       const userResp = await fetch("https://connect.linux.do/api/user", {
@@ -38,33 +40,43 @@ export async function handleAuth(request, env, url) {
 
       // 3. 生成签名 Session
       const secret = env.SESSION_SECRET;
-
       const sessionObj = {
         id: userData.id,
         username: userData.username,
         name: userData.name,
         exp: Date.now() + 86400 * 1000 // 24小时过期
       };
-
       const rawSession = JSON.stringify(sessionObj);
       const signature = await sign(rawSession, secret);
 
-      const safeBase64 = btoa(encodeURIComponent(rawSession).replace(/%([0-9A-F]{2})/g,
-        function toSolidBytes(match, p1) {
-          return String.fromCharCode('0x' + p1);
-        }));
+      const utf8Bytes = new TextEncoder().encode(rawSession);
+      const binaryString = String.fromCharCode(...utf8Bytes);
+      const safeBase64 = btoa(binaryString);
 
-      const sessionValue = safeBase64 + "." + signature; // 格式: payload.signature
+      const sessionValue = safeBase64 + "." + signature;
+
+      // 4. 构建 Cookie 字符串
+      const cookieParts = [
+        `SESSION_AUTH=${sessionValue}`,
+        "Path=/",
+        "HttpOnly",
+        "SameSite=Lax", 
+        "Max-Age=86400"
+      ];
+      
+      if (url.protocol === 'https:') {
+        cookieParts.push("Secure");
+      }
 
       return new Response(null, {
         status: 302,
         headers: {
           "Location": "/",
-          // HttpOnly: 禁止 JS 读取; Secure: 仅 HTTPS; SameSite=Lax: 防止 CSRF
-          "Set-Cookie": `SESSION_AUTH=${sessionValue}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=86400`
+          "Set-Cookie": cookieParts.join("; ")
         }
       });
     } catch (e) {
+      console.error("Auth Exception:", e);
       return new Response("Auth Failed: " + e.message, { status: 500 });
     }
   }
@@ -80,14 +92,20 @@ export async function verifySession(request, env) {
   if (!sessionAuth) return null;
 
   try {
-    // 解析格式: payloadBase64.signature
     const parts = sessionAuth.split('.');
-    if (parts.length !== 2) return null;
+    if (parts.length !== 2) {
+        console.warn("Invalid Session Format");
+        return null;
+    }
 
     const [payloadB64, signature] = parts;
-    const rawSession = decodeURIComponent(atob(payloadB64).split('').map(function (c) {
-      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-    }).join(''));
+    
+    const binaryString = atob(payloadB64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+    const rawSession = new TextDecoder().decode(bytes);
 
     // 验证签名
     const secret = env.SESSION_SECRET;
@@ -99,10 +117,11 @@ export async function verifySession(request, env) {
     }
 
     const data = JSON.parse(rawSession);
-    if (Date.now() > data.exp) return null; // 过期
+    if (Date.now() > data.exp) return null;
 
     return data;
   } catch (e) {
+    console.error("Session Verify Error:", e);
     return null;
   }
 }
@@ -122,14 +141,24 @@ async function sign(data, secret) {
     key,
     enc.encode(data)
   );
-  // 将二进制签名转换为 Hex 字符串，方便在 Cookie 中传输
   return [...new Uint8Array(signature)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 function parseCookies(str) {
   return str.split(';').reduce((acc, v) => {
-    const [key, val] = v.trim().split('=').map(decodeURIComponent);
-    acc[key] = val;
+    const trimmed = v.trim();
+    const separatorIndex = trimmed.indexOf('='); 
+    
+    if (separatorIndex === -1) return acc;
+    
+    const key = trimmed.slice(0, separatorIndex);
+    const val = trimmed.slice(separatorIndex + 1);
+    
+    try {
+        acc[decodeURIComponent(key)] = decodeURIComponent(val);
+    } catch(e) {
+        acc[key] = val;
+    }
     return acc;
   }, {});
 }
