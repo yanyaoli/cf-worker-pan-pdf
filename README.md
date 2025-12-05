@@ -142,14 +142,14 @@ npx wrangler kv key put --binding=COOKIE_DB "server_cookies_pool" --path=cookies
 # 设置后，可在网页设置中填入此 Token 进行授权，无需 SSO
 npx wrangler secret put ACCESS_TOKEN
 
-# 2. 设置 Session 签名密钥 (如果开启鉴权则必须设置)
-# 生成一个随机字符串即可
-npx wrangler secret put SESSION_SECRET
-
-# 3. 设置 Linux.do SSO (如果需要 SSO 登录)
+# 2. 设置 Linux.do SSO (如果需要 SSO 登录)
 # 如果不设置这两个 Secrets，SSO 登录按钮将自动隐藏
 npx wrangler secret put LINUX_DO_CLIENT_ID
 npx wrangler secret put LINUX_DO_CLIENT_SECRET
+
+# 3. 设置 Session 签名密钥 (如果 SSO 登录则必须设置)
+# 生成一个随机字符串即可
+npx wrangler secret put SESSION_SECRET
 ```
 
 ### 6. 部署上线
