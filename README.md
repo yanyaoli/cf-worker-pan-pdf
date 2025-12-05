@@ -158,7 +158,7 @@ npx wrangler secret put SESSION_SECRET
 npx wrangler deploy
 ```
 
-部署成功后，Cloudflare 会返回一个访问域名（例如 `baidu-worker-pro.你的子域.workers.dev`）。
+部署成功后，Cloudflare 会返回一个访问域名（例如 `cf-worker-pan-pdf.你的子域.workers.dev`）。
 
 ## ⚙️ 环境变量与配置说明
 
