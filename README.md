@@ -21,6 +21,8 @@
 
 本项目是一个运行在 Cloudflare Workers 上的轻量级应用，使用某度网盘的 "PDF 预览" 机制，实现对 150MB 以下文件的免客户端高速预览。
 
+⚠️ **Attention:** 本项目不提供任何下载服务
+
 ## ✨ 特性
 
 - **⚡️ Serverless 架构**：无需服务器，直接部署在 Cloudflare Workers 上。
@@ -181,11 +183,6 @@ npx wrangler dev
 # 注意：本地开发时，你需要创建一个 .dev.vars 文件来模拟 Secrets
 # 格式: KEY=VALUE
 ```
-
-## 🐛 已知BUG
-
-1. `{ "error_code":31326, "error_msg":"anti hotlinking" }`，原因未知，暂时无解（我自己还没复现出这个bug）。
-2. `{“error_code”:31362, "error_msg": "sign error"}` **尝试重新解析**
 
 ## ⚠️ 免责声明
 
