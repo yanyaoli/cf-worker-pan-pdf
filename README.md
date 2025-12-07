@@ -165,8 +165,8 @@ npx wrangler deploy
 
 | 变量名 | 类型 | 说明 |
 | :--- | :--- | :--- |
-| `SERVER_COOKIES` | Secret | **可选**。JSON 字符串数组。如果使用了 KV (`server_cookies_pool`)，则无需配置此项。 |
-| `ENABLE_AUTH` | Config | **功能开关**。是否开启 API 鉴权保护。`true` = 必须授权才能解析；`false` = 公开访问。 |
+| `SERVER_COOKIES` | Secret | **可选**。JSON 字符串数组，如`["BDUSS=xxxxx"]`。如果使用了 KV (`server_cookies_pool`)，则无需配置此项。 |
+| `ENABLE_AUTH` | JSON | **功能开关**。是否开启 API 鉴权保护。`true` = 必须授权才能解析；`false` = 公开访问。 |
 | `ACCESS_TOKEN` | Secret | **可选**。自定义访问令牌。设置后可通过 Header `Authorization: Bearer <token>` 或在网页设置中输入该 Token 进行授权。 |
 | `SESSION_SECRET` | Secret | **可选**。用于签名登录 Session 的密钥，开启 `ENABLE_AUTH` 时必须设置。 |
 | `LINUX_DO_CLIENT_ID` | Secret | **可选**。Linux.do Connect 的 Client ID。配置后网页将显示 "Linux.do 登录" 按钮。 |
