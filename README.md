@@ -62,6 +62,7 @@
 2.  本地安装 Node.js 环境。
 3.  拥有至少一个某度账号。
 4.  (可选) [Linux.do](https://connect.linux.do/) 账号用于 SSO 登录。
+5.  能够绑定cloudflare的域名 或者 能够访问workers.dev的网络环境。
 
 ### 1. 克隆项目并安装依赖
 
@@ -104,6 +105,16 @@ npx wrangler kv namespace create COOKIE_DB
   {
     "binding": "COOKIE_DB",
     "id": "你的_KV_ID_粘贴到这里"
+  }
+]
+```
+4.  如果要绑定自定义域名，请加入如下配置（需要先在cloudflare中完成域名的绑定）：
+```jsonc
+"routes": [
+  {
+    "pattern": "你的前缀.你的域名",
+    "zone_name": "你的域名",
+    "custom_domain": true
   }
 ]
 ```
@@ -160,6 +171,7 @@ npx wrangler deploy
 ```
 
 部署成功后，Cloudflare 会返回一个访问域名（例如 `cf-worker-pan-pdf.你的子域.workers.dev`）。
+
 
 ## ⚙️ 环境变量与配置说明
 
