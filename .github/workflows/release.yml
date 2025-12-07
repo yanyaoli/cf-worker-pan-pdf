@@ -46,9 +46,9 @@ jobs:
             2. 在 Cloudflare Dashboard 创建一个新的 Worker。
             3. 点击 "Edit Code"，将 `worker.js` 的内容全部粘贴进去，点击 "Deploy"。
             4. **关键步骤**：去 Worker 的 **Settings -> Variables** 页面，手动添加以下变量：
-              - `ENABLE_AUTH`: (明文) true
-              - `ACCESS_TOKEN`: (加密/Secret) 你的密码
-              - `SERVER_COOKIES`: (加密/Secret) 你的 Cookie JSON 数组，比如 ["BDUSS=xxx"]
+              - `ENABLE_AUTH`: (`JSON`) `true`
+              - `ACCESS_TOKEN`: (`Secret`) 你的密码
+              - `SERVER_COOKIES`: (`Secret`) 你的 Cookie JSON 数组，比如 `["BDUSS=xxx"]`
             5. 去 **Settings -> Triggers** 添加 Cron Trigger（比如 `0 */2 * * *`），用于自动清理文件。
       
       - name: Test Build (Manual Trigger Only)
